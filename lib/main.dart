@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 
 import 'firebase_options.dart';
 import 'services/auth_service.dart';
+import 'services/contacts_service.dart';
 import 'ui/auth_gate.dart';
 
 void main() async {
@@ -11,13 +12,21 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
   await AuthService.initialize();
-  runApp(MyApp(authService: AuthService()));
+  runApp(MyApp(
+    authService: AuthService(),
+    contactsService: ContactsService(),
+  ));
 }
 
 class MyApp extends StatelessWidget {
   final AuthService authService;
+  final ContactsService contactsService;
 
-  const MyApp({super.key, required this.authService});
+  const MyApp({
+    super.key,
+    required this.authService,
+    required this.contactsService,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +36,10 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: AuthGate(authService: authService),
+      home: AuthGate(
+        authService: authService,
+        contactsService: contactsService,
+      ),
     );
   }
 }
