@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "323538074035",
+    "project_id": "safesignal-wits-2026",
+    "storage_bucket": "safesignal-wits-2026.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:323538074035:android:52d4c37eeb4bbb7fa633c6",
+        "android_client_info": {
+          "package_name": "com.mssdev.safe_signal"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCzD-alMuDlUIfQWVduR6XawXfr2ZuOgqc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
