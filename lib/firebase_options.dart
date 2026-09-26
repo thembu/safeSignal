@@ -56,22 +56,24 @@ class DefaultFirebaseOptions {
     projectId: 'safesignal-wits-2026',
     storageBucket: 'safesignal-wits-2026.firebasestorage.app',
   );
-
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyDiXGjfCouYq56p5OeRlhEXxF0XC8k1U-o',
     appId: '1:323538074035:ios:e87dd803f41b68a8a633c6',
     messagingSenderId: '323538074035',
     projectId: 'safesignal-wits-2026',
     storageBucket: 'safesignal-wits-2026.firebasestorage.app',
+    androidClientId: '323538074035-dfiedlvtkk2d9splii3asoehaekqi2ar.apps.googleusercontent.com',
+    iosClientId: '323538074035-0cidj5vm1sbvs9gqhjqambubcpgtr9ea.apps.googleusercontent.com',
     iosBundleId: 'com.mssdev.safeSignal',
   );
-
   static const FirebaseOptions macos = FirebaseOptions(
     apiKey: 'AIzaSyDiXGjfCouYq56p5OeRlhEXxF0XC8k1U-o',
     appId: '1:323538074035:ios:e87dd803f41b68a8a633c6',
     messagingSenderId: '323538074035',
     projectId: 'safesignal-wits-2026',
     storageBucket: 'safesignal-wits-2026.firebasestorage.app',
+    androidClientId: '323538074035-dfiedlvtkk2d9splii3asoehaekqi2ar.apps.googleusercontent.com',
+    iosClientId: '323538074035-0cidj5vm1sbvs9gqhjqambubcpgtr9ea.apps.googleusercontent.com',
     iosBundleId: 'com.mssdev.safeSignal',
   );
 

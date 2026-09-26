@@ -12,7 +12,20 @@
           "package_name": "com.mssdev.safe_signal"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "323538074035-dfiedlvtkk2d9splii3asoehaekqi2ar.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.mssdev.safe_signal",
+            "certificate_hash": "a39a4c768c4068b94d45127f06652baa780b2dc2"
+          }
+        },
+        {
+          "client_id": "323538074035-roiovtsmotjabuprn0qq19s4q1ht3t1q.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCzD-alMuDlUIfQWVduR6XawXfr2ZuOgqc"
@@ -20,7 +33,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "323538074035-roiovtsmotjabuprn0qq19s4q1ht3t1q.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "323538074035-0cidj5vm1sbvs9gqhjqambubcpgtr9ea.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.mssdev.safeSignal"
+              }
+            }
+          ]
         }
       }
     }
