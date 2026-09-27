@@ -33,13 +33,11 @@ void _p(String tag, String msg) {
 
 @pragma('vm:entry-point')
 void _foregroundTaskCallback() {
-  _p('FGCallback', 'setTaskHandler');
   FlutterForegroundTask.setTaskHandler(_SessionTaskHandler());
 }
 
 @pragma('vm:entry-point')
 void _onNotifActionBg(NotificationResponse resp) {
-  _p('NotifBg', 'action=${resp.actionId} payload=${resp.payload}');
   FlutterForegroundTask.sendDataToTask(_kMsgCancel);
 }
 
@@ -58,16 +56,11 @@ class _SessionTaskHandler extends TaskHandler {
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
-    _p('TaskHandler', 'onStart starter=${starter.name}');
-
     try {
       if (Firebase.apps.isEmpty) {
         await Firebase.initializeApp(
           options: DefaultFirebaseOptions.currentPlatform,
         );
-        _p('TaskHandler', 'Firebase initialised in isolate');
-      } else {
-        _p('TaskHandler', 'Firebase already initialised');
       }
     } catch (e) {
       _p('TaskHandler', 'Firebase init FAILED: $e');
@@ -75,13 +68,11 @@ class _SessionTaskHandler extends TaskHandler {
 
     try {
       const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-      final ok = await _notif.initialize(
+      await _notif.initialize(
         const InitializationSettings(android: androidInit),
         onDidReceiveNotificationResponse: _onNotifActionBg,
         onDidReceiveBackgroundNotificationResponse: _onNotifActionBg,
       );
-      _p('TaskHandler', 'notif plugin init=$ok');
-
       final android = _notif.resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin>();
       if (android != null) {
@@ -93,8 +84,7 @@ class _SessionTaskHandler extends TaskHandler {
           playSound: true,
           enableVibration: true,
         ));
-        final granted = await android.requestNotificationsPermission();
-        _p('TaskHandler', 'notif channel created, permission granted=$granted');
+        await android.requestNotificationsPermission();
       }
     } catch (e) {
       _p('TaskHandler', 'notif init FAILED: $e');
@@ -104,7 +94,6 @@ class _SessionTaskHandler extends TaskHandler {
       _uid = await FlutterForegroundTask.getData<String>(key: _kDataUid);
       _sessionId =
       await FlutterForegroundTask.getData<String>(key: _kDataSessionId);
-      _p('TaskHandler', 'loaded uid=$_uid session=$_sessionId');
     } catch (e) {
       _p('TaskHandler', 'getData FAILED: $e');
     }
@@ -117,7 +106,6 @@ class _SessionTaskHandler extends TaskHandler {
 
   @override
   Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
-    _p('TaskHandler', 'onDestroy timeout=$isTimeout');
     await _accelSub?.cancel();
     _accelSub = null;
     _cancelTimer?.cancel();
@@ -126,13 +114,11 @@ class _SessionTaskHandler extends TaskHandler {
 
   @override
   void onReceiveData(Object data) {
-    _p('TaskHandler', 'onReceiveData: $data');
     if (data is Map) {
       if (data.containsKey(_kDataUid)) _uid = data[_kDataUid] as String?;
       if (data.containsKey(_kDataSessionId)) {
         _sessionId = data[_kDataSessionId] as String?;
       }
-      _p('TaskHandler', 'updated uid=$_uid session=$_sessionId');
     } else if (data == _kMsgCancel) {
       _cancelPending();
     }
@@ -140,7 +126,6 @@ class _SessionTaskHandler extends TaskHandler {
 
   @override
   void onNotificationButtonPressed(String id) {
-    _p('TaskHandler', 'onNotificationButtonPressed: $id');
     if (id == 'cancel_shake') _cancelPending();
   }
 
@@ -149,10 +134,7 @@ class _SessionTaskHandler extends TaskHandler {
     _spikes.clear();
     _accelSub = accelerometerEventStream(
       samplingPeriod: SensorInterval.gameInterval,
-    ).listen(_onAccel, onError: (e) {
-      _p('TaskHandler', 'accel error: $e');
-    });
-    _p('TaskHandler', 'accel stream started');
+    ).listen(_onAccel);
   }
 
   void _onAccel(AccelerometerEvent e) {
@@ -165,8 +147,6 @@ class _SessionTaskHandler extends TaskHandler {
 
     _spikes.add(now);
     _spikes.removeWhere((t) => now.difference(t) > _kSpikeWindow);
-    _p('TaskHandler',
-        'spike mag=${magnitude.toStringAsFixed(1)} count=${_spikes.length}');
 
     if (_spikes.length >= _kRequiredSpikes) {
       _lastFired = now;
@@ -176,11 +156,7 @@ class _SessionTaskHandler extends TaskHandler {
   }
 
   Future<void> _onShakeDetected() async {
-    _p('TaskHandler', 'SHAKE — uid=$_uid session=$_sessionId');
-    if (_uid == null || _sessionId == null) {
-      _p('TaskHandler', 'no session context, ignoring');
-      return;
-    }
+    if (_uid == null || _sessionId == null) return;
     _awaitingCancel = true;
 
     try {
@@ -210,7 +186,6 @@ class _SessionTaskHandler extends TaskHandler {
         ),
         payload: 'cancel_shake',
       );
-      _p('TaskHandler', 'shake notification shown');
     } catch (e) {
       _p('TaskHandler', 'notif show FAILED: $e');
     }
@@ -221,7 +196,6 @@ class _SessionTaskHandler extends TaskHandler {
 
   Future<void> _cancelPending() async {
     if (!_awaitingCancel) return;
-    _p('TaskHandler', 'cancelled by user');
     _cancelTimer?.cancel();
     _awaitingCancel = false;
     await _notif.cancel(_kShakeNotifId);
@@ -233,10 +207,17 @@ class _SessionTaskHandler extends TaskHandler {
     await _notif.cancel(_kShakeNotifId);
 
     final uid = _uid, sessionId = _sessionId;
-    if (uid == null || sessionId == null) {
-      _p('TaskHandler', 'escalate abort — missing ids');
-      return;
+    if (uid == null || sessionId == null) return;
+
+    // Bring app to foreground so evidence capture (camera) can run.
+    try {
+      FlutterForegroundTask.launchApp('/');
+    } catch (e) {
+      _p('TaskHandler', 'launchApp failed: $e');
     }
+
+    // Give the app a moment to come to the front before flipping status.
+    await Future.delayed(const Duration(milliseconds: 500));
 
     try {
       await FirebaseFirestore.instance
@@ -247,7 +228,6 @@ class _SessionTaskHandler extends TaskHandler {
         'triggerReason': 'shake',
         'endedAt': Timestamp.fromDate(DateTime.now()),
       });
-      _p('TaskHandler', 'escalated session $sessionId');
     } catch (e) {
       _p('TaskHandler', 'escalate write FAILED: $e');
     }
@@ -292,11 +272,9 @@ class ForegroundSessionService {
     required String uid,
     required String sessionId,
   }) async {
-    // Save FIRST so onStart can read them.
     await FlutterForegroundTask.saveData(key: _kDataUid, value: uid);
     await FlutterForegroundTask.saveData(
         key: _kDataSessionId, value: sessionId);
-    _p('FGService', 'saved uid=$uid session=$sessionId');
 
     final isRunning = await FlutterForegroundTask.isRunningService;
     if (isRunning) {
@@ -314,7 +292,6 @@ class ForegroundSessionService {
       notificationText: _formatBody(nextCheckInAt),
       callback: _foregroundTaskCallback,
     );
-    _p('FGService', 'started');
   }
 
   Future<void> update({required DateTime nextCheckInAt}) async {
@@ -330,7 +307,6 @@ class ForegroundSessionService {
     final isRunning = await FlutterForegroundTask.isRunningService;
     if (!isRunning) return;
     await FlutterForegroundTask.stopService();
-    _p('FGService', 'stopped');
   }
 
   String _formatBody(DateTime nextCheckInAt) {

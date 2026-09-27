@@ -1,13 +1,9 @@
 // lib/ui/screens/scenarios/ehailing_screen.dart
-//
-// Shake detection is now owned by the ForegroundSessionService task
-// isolate (works foreground + background). This screen no longer
-// starts/stops a shake detector — it only handles session lifecycle,
-// share intake, and the check-in flow.
 
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../../models/session.dart';
 import '../../../models/user.dart';
@@ -65,6 +61,48 @@ class _EhailingScreenState extends State<EhailingScreen> {
         } catch (_) {}
       },
     );
+  }
+
+  Future<bool> _ensurePermissions() async {
+    final needed = [
+      Permission.camera,
+      Permission.microphone,
+      Permission.location,
+    ];
+
+    final missing = <Permission>[];
+    for (final p in needed) {
+      if (!(await p.status).isGranted) missing.add(p);
+    }
+    if (missing.isEmpty) return true;
+
+    if (mounted) {
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Permissions needed'),
+          content: const Text(
+            'SafeSignal needs camera, microphone and location to capture '
+                'evidence if you are in danger. This only runs if you trigger '
+                'an alert.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Not now'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Grant'),
+            ),
+          ],
+        ),
+      );
+      if (proceed != true) return false;
+    }
+
+    final results = await missing.request();
+    return results.values.every((s) => s.isGranted);
   }
 
   Future<void> _onSharedLink(String link) async {
@@ -139,6 +177,9 @@ class _EhailingScreenState extends State<EhailingScreen> {
 
     final minutes = await _pickDuration();
     if (minutes == null) return;
+    if (!mounted) return;
+
+    if (!await _ensurePermissions()) return;
     if (!mounted) return;
 
     setState(() => _busy = true);
@@ -233,6 +274,9 @@ class _EhailingScreenState extends State<EhailingScreen> {
   Future<void> _startSession() async {
     final minutes = await _pickDuration();
     if (minutes == null) return;
+    if (!await _ensurePermissions()) return;
+    if (!mounted) return;
+
     setState(() => _busy = true);
     try {
       await _sessions.startSession(durationMinutes: minutes);
@@ -360,7 +404,7 @@ class _ActiveView extends StatelessWidget {
                 ],
                 const SizedBox(height: 8),
                 const Text(
-                  '🤳 Shake phone hard to send emergency alert (works even when app is closed)',
+                  '🤳 Shake phone hard to send emergency alert',
                   style: TextStyle(fontSize: 12, color: Colors.black54),
                 ),
               ],
