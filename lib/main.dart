@@ -5,6 +5,8 @@ import 'firebase_options.dart';
 import 'services/auth_service.dart';
 import 'services/contacts_service.dart';
 import 'ui/auth_gate.dart';
+import 'services/share_intake_service.dart';
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -12,6 +14,8 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
   await AuthService.initialize();
+  await ShareIntakeService.instance.init();
+
   runApp(MyApp(
     authService: AuthService(),
     contactsService: ContactsService(),
