@@ -1,3 +1,10 @@
+// lib/ui/screens/scenarios/ehailing_screen.dart
+//
+// Shake detection is now owned by the ForegroundSessionService task
+// isolate (works foreground + background). This screen no longer
+// starts/stops a shake detector — it only handles session lifecycle,
+// share intake, and the check-in flow.
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -15,7 +22,6 @@ class EhailingScreen extends StatefulWidget {
   final AuthService authService;
   final ContactsService contactsService;
   final User user;
-
 
   const EhailingScreen({
     super.key,
@@ -44,31 +50,26 @@ class _EhailingScreenState extends State<EhailingScreen> {
     _sub = _sessions.watchActiveSession().listen(_onSessionUpdate);
     _shareSub = ShareIntakeService.instance.links.listen(_onSharedLink);
 
-// Drain any link parked before we were listening (e.g. cold-start pre-auth).
     final pending = ShareIntakeService.instance.consumePending();
     if (pending != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _onSharedLink(pending));
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _onSharedLink(pending));
     }
-
   }
 
   Future<void> _initScheduler() async {
     await CheckInScheduler.instance.init(
       onTap: (sessionId) async {
-        // Notification tapped -> mark as awaiting so UI opens the prompt.
         try {
           await _sessions.promptCheckIn(sessionId);
-        } catch (_) {/* session may have ended */}
+        } catch (_) {}
       },
     );
   }
 
-
   Future<void> _onSharedLink(String link) async {
     if (!mounted) return;
 
-    // Soft check: warn if the URL doesn't look like an e-hailing trip link,
-    // but let the user continue anyway (useful for testing).
     if (!_looksLikeTripLink(link)) {
       final proceed = await showDialog<bool>(
         context: context,
@@ -94,7 +95,6 @@ class _EhailingScreenState extends State<EhailingScreen> {
       if (!mounted) return;
     }
 
-    // If a session is already active, ask what to do.
     if (_lastSeen != null) {
       final choice = await showModalBottomSheet<_SharedLinkChoice>(
         context: context,
@@ -158,7 +158,6 @@ class _EhailingScreenState extends State<EhailingScreen> {
 
   static bool _looksLikeTripLink(String url) {
     final lower = url.toLowerCase();
-    // Uber: uber.com, u.uber.com, trip.uber.com. Bolt: bolt.eu, m.bolt.eu.
     return lower.contains('uber.com') || lower.contains('bolt.eu');
   }
 
@@ -169,14 +168,12 @@ class _EhailingScreenState extends State<EhailingScreen> {
       return;
     }
 
-    // Schedule (or reschedule) the OS notification whenever the due time changes.
     if (session.status == SessionStatus.active &&
         session.checkInDueAt != null) {
       CheckInScheduler.instance
           .schedule(sessionId: session.id, when: session.checkInDueAt!);
     }
 
-    // Foreground: if timer already passed and we're still "active", promote it.
     if (session.status == SessionStatus.active &&
         session.checkInDueAt != null &&
         DateTime.now().isAfter(session.checkInDueAt!)) {
@@ -184,7 +181,6 @@ class _EhailingScreenState extends State<EhailingScreen> {
       return;
     }
 
-    // If awaiting or in grace, open the full-screen prompt.
     if ((session.status == SessionStatus.awaitingCheckIn ||
         session.status == SessionStatus.inGrace) &&
         !_prompting) {
@@ -262,8 +258,6 @@ class _EhailingScreenState extends State<EhailingScreen> {
       if (mounted) setState(() => _busy = false);
     }
   }
-
-
 
   @override
   void dispose() {
@@ -364,6 +358,11 @@ class _ActiveView extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text('Trip: ${session.tripLink}'),
                 ],
+                const SizedBox(height: 8),
+                const Text(
+                  '🤳 Shake phone hard to send emergency alert (works even when app is closed)',
+                  style: TextStyle(fontSize: 12, color: Colors.black54),
+                ),
               ],
             ),
           ),
