@@ -222,7 +222,7 @@ class _EhailingScreenState extends State<EhailingScreen> {
               child: Text('Check in every…',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             ),
-            for (final m in [10, 20, 30, 45])
+            for (final m in [1, 20, 30, 45])
               ListTile(
                 title: Text('$m minutes'),
                 onTap: () => Navigator.of(context).pop(m),
