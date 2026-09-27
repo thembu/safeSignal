@@ -33,6 +33,8 @@ class ShareIntakeService {
     return link;
   }
 
+  bool get hasPending => _pendingLink != null;
+
   Future<void> init() async {
     if (_initialised) return;
     _initialised = true;
@@ -61,15 +63,13 @@ class ShareIntakeService {
         continue;
       }
       _log('$source: extracted url=$url');
-      if (_controller.hasListener) {
-        _controller.add(url);
-      } else {
-        _pendingLink = url;
-        _log('$source: no listener yet, parked as pending');
-      }
+      // Always park — EhailingScreen consumes it on mount via consumePending().
+      _pendingLink = url;
+      // Also broadcast — a listener already on screen (e.g. HomeScreen or an
+      // already-mounted EhailingScreen) can react immediately.
+      _controller.add(url);
     }
   }
-
   /// Pulls the first http(s) URL out of a shared string. Share sheets often
   /// deliver "Track my ride: https://uber.com/…" rather than a bare URL.
   static String? _extractUrl(String text) {
