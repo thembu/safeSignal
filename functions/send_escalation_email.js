@@ -1,7 +1,9 @@
 // functions/send_escalation_email.js
 //
-// Sends ONE consolidated email to trusted contacts ~60s after a session
-// transitions to escalated. Uses Gmail SMTP via nodemailer (free).
+// Sends ONE consolidated email to trusted contacts after a session
+// transitions to escalated. Polls the evidence subcollection every few
+// seconds for up to POLL_MAX_MS, then sends whatever is present (or an
+// empty notice if nothing arrived).
 //
 // functions/.env:
 //   GMAIL_USER=youremail@gmail.com
@@ -19,7 +21,19 @@ const admin = require('firebase-admin');
 if (!admin.apps.length) admin.initializeApp();
 const db = admin.firestore();
 
-const DELAY_MS = 60 * 1000;
+// Wait at least this long before the first check — gives the client
+// time to start writing evidence.
+const POLL_INITIAL_MS = 15 * 1000;
+// Check every this-many ms after the initial wait.
+const POLL_INTERVAL_MS = 10 * 1000;
+// Give up polling after this total elapsed time from escalation.
+const POLL_MAX_MS = 120 * 1000;
+// If the evidence count is stable for this long AND we have at least
+// one item, assume capture is done and send early.
+const STABLE_MS = 15 * 1000;
+// Expected artefacts on a good run (3 back + 3 front photos, 1 audio,
+// 1 video). If we hit this many we send immediately.
+const EXPECTED_COUNT = 8;
 
 let transporter = null;
 function getTransporter() {
@@ -39,7 +53,7 @@ exports.sendEscalationEmail = onDocumentUpdated(
   {
     document: 'users/{uid}/sessions/{sessionId}',
     region: 'us-central1',
-    timeoutSeconds: 120,
+    timeoutSeconds: 300, // must exceed POLL_MAX_MS + send time
   },
   async (event) => {
     const before = event.data.before.data();
@@ -49,16 +63,56 @@ exports.sendEscalationEmail = onDocumentUpdated(
     if (before.status === 'escalated' || after.status !== 'escalated') return;
     if (after.emailSentAt) return;
 
-    logger.info(`Escalation for ${sessionId} (uid=${uid}) — waiting for evidence…`);
-
-    await sleep(DELAY_MS);
+    logger.info(`Escalation for ${sessionId} (uid=${uid}) — polling for evidence…`);
 
     const sessionRef = db.doc(`users/${uid}/sessions/${sessionId}`);
-    const [sessionSnap, userSnap, contactsSnap, evidenceSnap] = await Promise.all([
+    const evidenceCol = db.collection(`users/${uid}/sessions/${sessionId}/evidence`);
+
+    // Poll for evidence.
+    const startedAt = Date.now();
+    let evidence = [];
+    let lastCount = -1;
+    let lastChangeAt = Date.now();
+
+    await sleep(POLL_INITIAL_MS);
+
+    while (Date.now() - startedAt < POLL_MAX_MS) {
+      const snap = await evidenceCol.get();
+      evidence = [];
+      snap.forEach((doc) => evidence.push(doc.data()));
+
+      const elapsed = Math.round((Date.now() - startedAt) / 1000);
+      logger.info(`  poll @${elapsed}s: ${evidence.length} evidence item(s)`);
+
+      if (evidence.length !== lastCount) {
+        lastCount = evidence.length;
+        lastChangeAt = Date.now();
+      }
+
+      // Enough evidence collected — send now.
+      if (evidence.length >= EXPECTED_COUNT) {
+        logger.info(`  hit expected count (${EXPECTED_COUNT}), sending`);
+        break;
+      }
+
+      // Count has been stable for STABLE_MS with something present — send.
+      if (evidence.length > 0 && Date.now() - lastChangeAt >= STABLE_MS) {
+        logger.info(`  count stable for ${STABLE_MS / 1000}s, sending`);
+        break;
+      }
+
+      await sleep(POLL_INTERVAL_MS);
+    }
+
+    if (Date.now() - startedAt >= POLL_MAX_MS) {
+      logger.warn(`  poll timeout after ${POLL_MAX_MS / 1000}s, sending what we have`);
+    }
+
+    // Now assemble and send.
+    const [sessionSnap, userSnap, contactsSnap] = await Promise.all([
       sessionRef.get(),
       db.doc(`users/${uid}`).get(),
       db.collection(`users/${uid}/contacts`).get(),
-      db.collection(`users/${uid}/sessions/${sessionId}/evidence`).get(),
     ]);
 
     const session = sessionSnap.data() || {};
@@ -77,9 +131,6 @@ exports.sendEscalationEmail = onDocumentUpdated(
       logger.warn('No contact emails on file, skipping');
       return;
     }
-
-    const evidence = [];
-    evidenceSnap.forEach((doc) => evidence.push(doc.data()));
 
     const html = buildHtml({
       userName,
@@ -100,7 +151,7 @@ exports.sendEscalationEmail = onDocumentUpdated(
         subject: `EMERGENCY - ${userName} may need help`,
         html,
       });
-      logger.info(`Email sent to ${recipients.length} recipient(s)`);
+      logger.info(`Email sent to ${recipients.length} recipient(s) with ${evidence.length} evidence item(s)`);
       await sessionRef.update({
         emailSentAt: admin.firestore.FieldValue.serverTimestamp(),
         emailRecipientCount: recipients.length,
