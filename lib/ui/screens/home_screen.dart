@@ -94,7 +94,7 @@ class _HomeScreenState extends State<HomeScreen> {
         subtitle: 'Walking, driving, or on transit',
         icon: Icons.directions_walk,
         color: Colors.orange,
-        onTap: () => _openScenario(const FollowedScreen()),
+        onTap: () => _openScenario(FollowedScreen(user: widget.user)),
       ),
       _Scenario(
         title: 'Meeting a stranger',

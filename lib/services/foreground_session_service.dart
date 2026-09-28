@@ -12,9 +12,12 @@ import 'package:sensors_plus/sensors_plus.dart';
 
 import '../firebase_options.dart';
 
-const double _kSpikeThreshold = 25.0;
-const int _kRequiredSpikes = 3;
-const Duration _kSpikeWindow = Duration(milliseconds: 1500);
+// Shake tuning — harsher than before to avoid false positives from
+// quick phone movement. Requires several strong, alternating jolts
+// (a real "shake"), not a single fling.
+const double _kSpikeThreshold = 32.0;                  // ~3.3g magnitude
+const int _kRequiredSpikes = 4;                        // alternating jolts needed
+const Duration _kSpikeWindow = Duration(milliseconds: 1200);
 const Duration _kDebounce = Duration(seconds: 5);
 const Duration _kCancelWindow = Duration(seconds: 5);
 
@@ -45,6 +48,7 @@ class _SessionTaskHandler extends TaskHandler {
   StreamSubscription<AccelerometerEvent>? _accelSub;
   final List<DateTime> _spikes = [];
   DateTime? _lastFired;
+  int? _lastDominantSign; // +1 or -1 — used to require alternating jolts
 
   String? _uid;
   String? _sessionId;
@@ -73,8 +77,7 @@ class _SessionTaskHandler extends TaskHandler {
         onDidReceiveNotificationResponse: _onNotifActionBg,
         onDidReceiveBackgroundNotificationResponse: _onNotifActionBg,
       );
-      final android = _notif.resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
+      final android = _notif.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
       if (android != null) {
         await android.createNotificationChannel(const AndroidNotificationChannel(
           _kShakeChannelId,
@@ -132,6 +135,7 @@ class _SessionTaskHandler extends TaskHandler {
   void _startShakeStream() {
     _accelSub?.cancel();
     _spikes.clear();
+    _lastDominantSign = null;
     _accelSub = accelerometerEventStream(
       samplingPeriod: SensorInterval.gameInterval,
     ).listen(_onAccel);
@@ -145,12 +149,25 @@ class _SessionTaskHandler extends TaskHandler {
     final magnitude = sqrt(e.x * e.x + e.y * e.y + e.z * e.z);
     if (magnitude < _kSpikeThreshold) return;
 
+    // Find the dominant axis for this sample and take its sign.
+    // A real shake alternates direction; a single fling or drop does not.
+    final absX = e.x.abs(), absY = e.y.abs(), absZ = e.z.abs();
+    final dominant = absX >= absY && absX >= absZ
+        ? e.x
+        : (absY >= absZ ? e.y : e.z);
+    final sign = dominant >= 0 ? 1 : -1;
+
+    // Reject same-direction repeats — must alternate to count.
+    if (_lastDominantSign == sign) return;
+    _lastDominantSign = sign;
+
     _spikes.add(now);
     _spikes.removeWhere((t) => now.difference(t) > _kSpikeWindow);
 
     if (_spikes.length >= _kRequiredSpikes) {
       _lastFired = now;
       _spikes.clear();
+      _lastDominantSign = null;
       _onShakeDetected();
     }
   }
@@ -252,10 +269,6 @@ class ForegroundSessionService {
         channelDescription:
         'Shown while a check-in session is running so you always '
             'know SafeSignal is watching.',
-        channelImportance: NotificationChannelImportance.LOW,
-        priority: NotificationPriority.LOW,
-        onlyAlertOnce: true,
-        showWhen: false,
       ),
       iosNotificationOptions: const IOSNotificationOptions(),
       foregroundTaskOptions: ForegroundTaskOptions(
@@ -273,45 +286,45 @@ class ForegroundSessionService {
     required String sessionId,
   }) async {
     await FlutterForegroundTask.saveData(key: _kDataUid, value: uid);
-    await FlutterForegroundTask.saveData(
-        key: _kDataSessionId, value: sessionId);
+    await FlutterForegroundTask.saveData(key: _kDataSessionId, value: sessionId);
 
-    final isRunning = await FlutterForegroundTask.isRunningService;
-    if (isRunning) {
+    if (await FlutterForegroundTask.isRunningService) {
+      await FlutterForegroundTask.updateService(
+        notificationTitle: 'SafeSignal watching',
+        notificationText: 'Next check-in at ${_fmt(nextCheckInAt)}',
+      );
+      // Push the new session ids into the running task too.
       FlutterForegroundTask.sendDataToTask({
         _kDataUid: uid,
         _kDataSessionId: sessionId,
       });
-      await update(nextCheckInAt: nextCheckInAt);
       return;
     }
 
     await FlutterForegroundTask.startService(
-      serviceId: 4242,
-      notificationTitle: 'SafeSignal active',
-      notificationText: _formatBody(nextCheckInAt),
+      notificationTitle: 'SafeSignal watching',
+      notificationText: 'Next check-in at ${_fmt(nextCheckInAt)}',
       callback: _foregroundTaskCallback,
     );
   }
 
   Future<void> update({required DateTime nextCheckInAt}) async {
-    final isRunning = await FlutterForegroundTask.isRunningService;
-    if (!isRunning) return;
+    if (!await FlutterForegroundTask.isRunningService) return;
     await FlutterForegroundTask.updateService(
-      notificationTitle: 'SafeSignal active',
-      notificationText: _formatBody(nextCheckInAt),
+      notificationTitle: 'SafeSignal watching',
+      notificationText: 'Next check-in at ${_fmt(nextCheckInAt)}',
     );
   }
 
   Future<void> stop() async {
-    final isRunning = await FlutterForegroundTask.isRunningService;
-    if (!isRunning) return;
-    await FlutterForegroundTask.stopService();
+    if (await FlutterForegroundTask.isRunningService) {
+      await FlutterForegroundTask.stopService();
+    }
   }
 
-  String _formatBody(DateTime nextCheckInAt) {
-    final hh = nextCheckInAt.hour.toString().padLeft(2, '0');
-    final mm = nextCheckInAt.minute.toString().padLeft(2, '0');
-    return 'Next check-in at $hh:$mm · Tap to view';
+  static String _fmt(DateTime t) {
+    final l = t.toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(l.hour)}:${two(l.minute)}';
   }
 }

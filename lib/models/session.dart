@@ -68,6 +68,7 @@ class Session {
   final DateTime? checkInWindowEndsAt; // deadline to tap "I'm okay"
   final DateTime? graceEndsAt;         // deadline to cancel false alarm
   final DateTime? endedAt;
+  final String? mode; // 'ehailing' | 'followed' | 'date' | 'domestic'
 
   Session({
     required this.id,
@@ -79,6 +80,7 @@ class Session {
     this.checkInWindowEndsAt,
     this.graceEndsAt,
     this.endedAt,
+    this.mode
   });
 
   factory Session.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -94,6 +96,7 @@ class Session {
       (data['checkInWindowEndsAt'] as Timestamp?)?.toDate(),
       graceEndsAt: (data['graceEndsAt'] as Timestamp?)?.toDate(),
       endedAt: (data['endedAt'] as Timestamp?)?.toDate(),
+      mode: data['mode'] as String?,
     );
   }
 }
