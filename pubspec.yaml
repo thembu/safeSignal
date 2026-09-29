@@ -51,6 +51,7 @@ dependencies:
   path_provider: ^2.1.4
   geolocator: ^13.0.1
   sensors_plus: ^6.0.1
+  image_picker: ^1.2.3
 
 dev_dependencies:
   flutter_test:

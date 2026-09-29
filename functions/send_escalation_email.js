@@ -2,17 +2,15 @@
 //
 // Sends ONE consolidated email to trusted contacts after a session
 // transitions to escalated. Polls the evidence subcollection every few
-// seconds for up to POLL_MAX_MS, then sends whatever is present (or an
-// empty notice if nothing arrived).
+// seconds for up to POLL_MAX_MS, then sends whatever is present.
+//
+// For 'date' mode sessions, also loads the pre-session dateContext/info
+// doc and renders it in the email body.
 //
 // functions/.env:
 //   GMAIL_USER=youremail@gmail.com
-//   GMAIL_APP_PASSWORD=xxxxxxxxxxxxxxxx    (App Password, not real password)
+//   GMAIL_APP_PASSWORD=xxxxxxxxxxxxxxxx
 //   GMAIL_FROM_NAME=SafeSignal
-//
-// In functions/index.js:
-//   exports.sendEscalationEmail =
-//     require('./send_escalation_email').sendEscalationEmail;
 
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const { logger } = require('firebase-functions');
@@ -21,18 +19,10 @@ const admin = require('firebase-admin');
 if (!admin.apps.length) admin.initializeApp();
 const db = admin.firestore();
 
-// Wait at least this long before the first check — gives the client
-// time to start writing evidence.
 const POLL_INITIAL_MS = 15 * 1000;
-// Check every this-many ms after the initial wait.
 const POLL_INTERVAL_MS = 10 * 1000;
-// Give up polling after this total elapsed time from escalation.
 const POLL_MAX_MS = 120 * 1000;
-// If the evidence count is stable for this long AND we have at least
-// one item, assume capture is done and send early.
 const STABLE_MS = 15 * 1000;
-// Expected artefacts on a good run (3 back + 3 front photos, 1 audio,
-// 1 video). If we hit this many we send immediately.
 const EXPECTED_COUNT = 8;
 
 let transporter = null;
@@ -53,7 +43,7 @@ exports.sendEscalationEmail = onDocumentUpdated(
   {
     document: 'users/{uid}/sessions/{sessionId}',
     region: 'us-central1',
-    timeoutSeconds: 300, // must exceed POLL_MAX_MS + send time
+    timeoutSeconds: 300,
   },
   async (event) => {
     const before = event.data.before.data();
@@ -68,7 +58,7 @@ exports.sendEscalationEmail = onDocumentUpdated(
     const sessionRef = db.doc(`users/${uid}/sessions/${sessionId}`);
     const evidenceCol = db.collection(`users/${uid}/sessions/${sessionId}/evidence`);
 
-    // Poll for evidence.
+    // --- Poll for evidence ---
     const startedAt = Date.now();
     let evidence = [];
     let lastCount = -1;
@@ -89,13 +79,11 @@ exports.sendEscalationEmail = onDocumentUpdated(
         lastChangeAt = Date.now();
       }
 
-      // Enough evidence collected — send now.
       if (evidence.length >= EXPECTED_COUNT) {
         logger.info(`  hit expected count (${EXPECTED_COUNT}), sending`);
         break;
       }
 
-      // Count has been stable for STABLE_MS with something present — send.
       if (evidence.length > 0 && Date.now() - lastChangeAt >= STABLE_MS) {
         logger.info(`  count stable for ${STABLE_MS / 1000}s, sending`);
         break;
@@ -108,11 +96,12 @@ exports.sendEscalationEmail = onDocumentUpdated(
       logger.warn(`  poll timeout after ${POLL_MAX_MS / 1000}s, sending what we have`);
     }
 
-    // Now assemble and send.
-    const [sessionSnap, userSnap, contactsSnap] = await Promise.all([
+    // --- Assemble email inputs ---
+    const [sessionSnap, userSnap, contactsSnap, dateCtxSnap] = await Promise.all([
       sessionRef.get(),
       db.doc(`users/${uid}`).get(),
       db.collection(`users/${uid}/contacts`).get(),
+      db.doc(`users/${uid}/sessions/${sessionId}/dateContext/info`).get(),
     ]);
 
     const session = sessionSnap.data() || {};
@@ -132,12 +121,16 @@ exports.sendEscalationEmail = onDocumentUpdated(
       return;
     }
 
+    const dateContext = dateCtxSnap.exists ? dateCtxSnap.data() : null;
+
     const html = buildHtml({
       userName,
+      mode: session.mode,
       triggerReason: session.triggerReason,
       lastLocation: session.lastLocation,
       tripLink: session.tripLink,
       evidence,
+      dateContext,
     });
 
     const fromName = process.env.GMAIL_FROM_NAME || 'SafeSignal';
@@ -167,7 +160,7 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function buildHtml({ userName, triggerReason, lastLocation, tripLink, evidence }) {
+function buildHtml({ userName, mode, triggerReason, lastLocation, tripLink, evidence, dateContext }) {
   const maps =
     lastLocation && lastLocation.lat && lastLocation.lng
       ? `https://maps.google.com/?q=${lastLocation.lat},${lastLocation.lng}`
@@ -204,12 +197,14 @@ function buildHtml({ userName, triggerReason, lastLocation, tripLink, evidence }
     <div style="font-family: sans-serif; max-width: 600px;">
       <h1 style="color: #b00020;">🚨 EMERGENCY</h1>
       <p><strong>${userName}</strong> may need help.</p>
-      <p>SafeSignal automatically escalated a check-in session — trigger: <strong>${triggerReason || 'no check-in'}</strong>.</p>
+      <p>SafeSignal automatically escalated a check-in session — trigger: <strong>${triggerReason || 'no check-in'}</strong>${mode ? ` (mode: ${mode})` : ''}.</p>
 
       <h3>Location</h3>
       ${maps ? `<p><a href="${maps}">Open in Google Maps</a></p>` : '<p><em>Unavailable</em></p>'}
 
       ${tripLink ? `<h3>Trip link</h3><p><a href="${tripLink}">${tripLink}</a></p>` : ''}
+
+      ${renderDateContext(dateContext)}
 
       <h3>Evidence captured</h3>
       ${evidenceHtml}
@@ -220,5 +215,42 @@ function buildHtml({ userName, triggerReason, lastLocation, tripLink, evidence }
         This alert was sent automatically by SafeSignal.
       </p>
     </div>
+  `;
+}
+
+function renderDateContext(ctx) {
+  if (!ctx) return '';
+
+  const howMet =
+    ctx.howMet === 'Other' && ctx.howMetOther
+      ? `Other (${ctx.howMetOther})`
+      : ctx.howMet || 'Unknown';
+
+  let endAt = '';
+  if (ctx.expectedEndAt && typeof ctx.expectedEndAt.toDate === 'function') {
+    endAt = ctx.expectedEndAt.toDate().toLocaleString();
+  }
+
+  const personImg = ctx.personPhotoUrl
+    ? `<p><strong>Person:</strong><br/><a href="${ctx.personPhotoUrl}"><img src="${ctx.personPhotoUrl}" style="max-width:280px;border-radius:6px" /></a></p>`
+    : '';
+  const carImg = ctx.carPhotoUrl
+    ? `<p><strong>Car:</strong><br/><a href="${ctx.carPhotoUrl}"><img src="${ctx.carPhotoUrl}" style="max-width:280px;border-radius:6px" /></a></p>`
+    : '';
+  const plate = ctx.carPlate
+    ? `<li><strong>Plate:</strong> ${ctx.carPlate}</li>`
+    : '';
+
+  return `
+    <h3 style="color:#b00020;margin-top:24px">Date context (captured before the meeting)</h3>
+    <ul style="line-height:1.6">
+      <li><strong>Name:</strong> ${ctx.personName || '—'}</li>
+      <li><strong>How they met:</strong> ${howMet}</li>
+      <li><strong>Venue:</strong> ${ctx.venueName || '—'}${ctx.venueAddress ? ' — ' + ctx.venueAddress : ''}</li>
+      ${endAt ? `<li><strong>Expected end:</strong> ${endAt}</li>` : ''}
+      ${plate}
+    </ul>
+    ${personImg}
+    ${carImg}
   `;
 }

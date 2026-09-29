@@ -1,14 +1,18 @@
-import 'package:flutter/material.dart';
+// lib/ui/screens/home_screen.dart
+
 import 'dart:async';
+
+import 'package:flutter/material.dart';
+
 import '../../models/user.dart';
 import '../../services/auth_service.dart';
 import '../../services/contacts_service.dart';
 import '../../services/share_intake_service.dart';
 import 'contacts_screen.dart';
-import 'scenarios/ehailing_screen.dart';
+import 'scenarios/date_screen.dart';
 import 'scenarios/domestic_screen.dart';
+import 'scenarios/ehailing_screen.dart';
 import 'scenarios/followed_screen.dart';
-import 'scenarios/stranger_meeting_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final AuthService authService;
@@ -40,7 +44,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     // Runtime: a link comes in while we're sitting on the home screen.
-    _shareSub = ShareIntakeService.instance.links.listen((_) => _openEhailing());
+    _shareSub =
+        ShareIntakeService.instance.links.listen((_) => _openEhailing());
   }
 
   @override
@@ -101,7 +106,7 @@ class _HomeScreenState extends State<HomeScreen> {
         subtitle: 'First date or first meet-up',
         icon: Icons.people_outline,
         color: Colors.teal,
-        onTap: () => _openScenario(const StrangerMeetingScreen()),
+        onTap: () => _openScenario(DateScreen(user: widget.user)),
       ),
       _Scenario(
         title: 'Domestic / robbery',
@@ -160,7 +165,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
-// ... keep _Scenario and _ScenarioCard classes unchanged
 
 class _Scenario {
   final String title;
