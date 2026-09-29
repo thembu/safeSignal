@@ -1,3 +1,5 @@
+// lib/ui/screens/scenarios/followed_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -5,6 +7,8 @@ import '../../../models/session.dart';
 import '../../../models/user.dart';
 import '../../../services/check_in_scheduler.dart';
 import '../../../services/session_service.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/app_widgets.dart';
 import '../check_in_screen.dart';
 
 class FollowedScreen extends StatefulWidget {
@@ -84,26 +88,25 @@ class _FollowedScreenState extends State<FollowedScreen> {
   Future<int?> _pickDuration() async {
     return showModalBottomSheet<int>(
       context: context,
-      backgroundColor: Colors.grey.shade900,
       builder: (_) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('Check in every…',
-                  style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, AppSpacing.sm,
+              ),
+              child: Text(
+                'Check in every…',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
             ),
             for (final m in [1, 3, 5, 10])
               ListTile(
-                title: Text('$m minutes',
-                    style: const TextStyle(color: Colors.white)),
+                title: Text('$m minutes'),
                 onTap: () => Navigator.of(context).pop(m),
               ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
           ],
         ),
       ),
@@ -205,37 +208,30 @@ class _FollowedScreenState extends State<FollowedScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Theme(
-      data: ThemeData.dark(),
-      child: Scaffold(
-        backgroundColor: Colors.black,
-        appBar: AppBar(
-          backgroundColor: Colors.black,
-          title: const Text("I'm being followed"),
-        ),
-        body: StreamBuilder<Session?>(
-          stream: _sessions.watchActiveSession(),
-          builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            final session = snap.data;
-            WidgetsBinding.instance
-                .addPostFrameCallback((_) => _onSessionUpdate(session));
+    return ScreenScaffold(
+      title: "I'm being followed",
+      child: StreamBuilder<Session?>(
+        stream: _sessions.watchActiveSession(),
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final session = snap.data;
+          WidgetsBinding.instance
+              .addPostFrameCallback((_) => _onSessionUpdate(session));
 
-            return Padding(
-              padding: const EdgeInsets.all(24),
-              child: session == null
-                  ? _IdleView(busy: _busy, onStart: _startSession)
-                  : _ActiveView(
-                session: session,
-                busy: _busy,
-                onCancel: () => _cancelSession(session.id),
-                onPanic: () => _panic(session.id),
-              ),
-            );
-          },
-        ),
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+            child: session == null
+                ? _IdleView(busy: _busy, onStart: _startSession)
+                : _ActiveView(
+              session: session,
+              busy: _busy,
+              onCancel: () => _cancelSession(session.id),
+              onPanic: () => _panic(session.id),
+            ),
+          );
+        },
       ),
     );
   }
@@ -248,34 +244,45 @@ class _IdleView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.directions_walk,
-              size: 64, color: Colors.orangeAccent),
-          const SizedBox(height: 16),
-          const Text(
-            'Stay alert.\nCheck in silently.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 18, color: Colors.white70),
+    final text = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          decoration: BoxDecoration(
+            color: AppColors.warningContainer,
+            shape: BoxShape.circle,
           ),
-          const SizedBox(height: 32),
-          SizedBox(
-            width: 220,
-            height: 60,
-            child: FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.orange.shade700,
-              ),
-              onPressed: busy ? null : onStart,
-              icon: const Icon(Icons.shield),
-              label: const Text('Start session',
-                  style: TextStyle(fontSize: 18)),
-            ),
+          child: const Icon(
+            Icons.directions_walk,
+            size: 56,
+            color: AppColors.warning,
           ),
-        ],
-      ),
+        ).centered(),
+        const SizedBox(height: AppSpacing.xl),
+        Text(
+          'Stay alert.\nCheck in silently.',
+          textAlign: TextAlign.center,
+          style: text.headlineSmall,
+        ),
+        const SizedBox(height: AppSpacing.md),
+        Text(
+          'We\'ll ping you at intervals. Miss a check-in and your '
+              'contacts get alerted.',
+          textAlign: TextAlign.center,
+          style: text.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: AppSpacing.xxl),
+        PrimaryButton(
+          label: 'Start session',
+          icon: Icons.shield,
+          onPressed: onStart,
+          busy: busy,
+        ),
+      ],
     );
   }
 }
@@ -295,54 +302,74 @@ class _ActiveView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Card(
-          color: Colors.grey.shade900,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Session active',
-                    style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white)),
-                const SizedBox(height: 8),
-                Text('Started at ${_fmt(session.startedAt)}',
-                    style: const TextStyle(color: Colors.white70)),
-                Text('Check in every ${session.durationMinutes} min',
-                    style: const TextStyle(color: Colors.white70)),
-                if (session.checkInDueAt != null)
-                  Text('Next check-in: ${_fmt(session.checkInDueAt!)}',
-                      style: const TextStyle(color: Colors.white70)),
-                const SizedBox(height: 8),
-                const Text(
-                  '🤳 Shake phone hard to send emergency alert',
-                  style: TextStyle(fontSize: 12, color: Colors.white38),
+        AppCard(
+          borderColor: AppColors.primary.withOpacity(0.3),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              StatusPill(status: session.status),
+              const SizedBox(height: AppSpacing.md),
+              InfoRow(
+                icon: Icons.play_arrow,
+                label: 'Started',
+                value: _fmt(session.startedAt),
+              ),
+              InfoRow(
+                icon: Icons.timer_outlined,
+                label: 'Check in every',
+                value: '${session.durationMinutes} min',
+              ),
+              if (session.checkInDueAt != null)
+                InfoRow(
+                  icon: Icons.schedule,
+                  label: 'Next check-in',
+                  value: _fmt(session.checkInDueAt!),
                 ),
-              ],
-            ),
+            ],
           ),
         ),
-        const SizedBox(height: 24),
-        SizedBox(
-          height: 60,
-          child: FilledButton.icon(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
-            onPressed: busy ? null : onPanic,
-            icon: const Icon(Icons.warning_amber_rounded),
-            label: const Text('Send alert now',
-                style: TextStyle(fontSize: 18)),
+        const SizedBox(height: AppSpacing.md),
+        AppCard(
+          background: AppColors.warningContainer.withOpacity(0.5),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.lg,
+            vertical: AppSpacing.md,
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.vibration,
+                  size: 20, color: AppColors.onWarningContainer),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Text(
+                  'Shake phone hard to send emergency alert',
+                  style: text.bodySmall?.copyWith(
+                    color: AppColors.onWarningContainer,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 12),
-        OutlinedButton.icon(
-          onPressed: busy ? null : onCancel,
-          icon: const Icon(Icons.cancel_outlined),
-          label: const Text('Cancel session'),
+        const SizedBox(height: AppSpacing.xl),
+        DangerButton(
+          label: 'Send alert now',
+          icon: Icons.warning_amber_rounded,
+          onPressed: onPanic,
+          busy: busy,
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        SecondaryButton(
+          label: 'Cancel session',
+          icon: Icons.cancel_outlined,
+          onPressed: onCancel,
+          busy: busy,
         ),
       ],
     );
@@ -353,4 +380,8 @@ class _ActiveView extends StatelessWidget {
     String two(int n) => n.toString().padLeft(2, '0');
     return '${two(l.hour)}:${two(l.minute)}';
   }
+}
+
+extension _CenterEx on Widget {
+  Widget centered() => Center(child: this);
 }

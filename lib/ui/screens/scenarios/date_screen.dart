@@ -1,11 +1,10 @@
 // lib/ui/screens/scenarios/date_screen.dart
 //
-// Replaces stranger_meeting_screen.dart. "Meeting a stranger" / date mode.
-// Phase 1: pre-session setup form (person photo, name, how met, venue,
-//          expected end, optional car photo + plate).
-// Phase 2: active session UI (dark, panic + cancel, mirrors FollowedScreen).
-// When the session ends (cancelled or escalated) the screen pops back to
-// HomeScreen instead of falling back to the setup form.
+// "Meeting a stranger" / date mode.
+// Phase 1: setup form (person photo, name, how met, venue, expected end,
+//          optional car photo + plate).
+// Phase 2: active session UI (mirrors FollowedScreen).
+// When the session ends the screen pops back to HomeScreen.
 
 import 'dart:async';
 import 'dart:io';
@@ -20,6 +19,8 @@ import '../../../models/user.dart';
 import '../../../services/check_in_scheduler.dart';
 import '../../../services/date_context_service.dart';
 import '../../../services/session_service.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/app_widgets.dart';
 import '../check_in_screen.dart';
 
 class DateScreen extends StatefulWidget {
@@ -37,7 +38,6 @@ class _DateScreenState extends State<DateScreen> {
   DateContextService(uid: widget.user.uid);
   final _picker = ImagePicker();
 
-  // --- form state ---
   final _nameCtrl = TextEditingController();
   final _venueNameCtrl = TextEditingController();
   final _venueAddressCtrl = TextEditingController();
@@ -45,20 +45,13 @@ class _DateScreenState extends State<DateScreen> {
   final _plateCtrl = TextEditingController();
 
   static const _howMetOptions = [
-    'Tinder',
-    'Hinge',
-    'Bumble',
-    'Grindr',
-    'Instagram',
-    'In person',
-    'Other',
+    'Tinder', 'Hinge', 'Bumble', 'Grindr', 'Instagram', 'In person', 'Other',
   ];
   String _howMet = 'Tinder';
   DateTime _expectedEnd = DateTime.now().add(const Duration(hours: 2));
   File? _personPhoto;
   File? _carPhoto;
 
-  // --- session state ---
   bool _busy = false;
   bool _prompting = false;
   String? _lastHandledSessionId;
@@ -134,37 +127,30 @@ class _DateScreenState extends State<DateScreen> {
   Future<ImageSource?> _chooseImageSource() async {
     return showModalBottomSheet<ImageSource>(
       context: context,
-      backgroundColor: Colors.grey.shade900,
-      shape: const RoundedRectangleBorder(
-        borderRadius:
-        BorderRadius.vertical(top: Radius.circular(16)),
-      ),
       builder: (_) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('Add photo',
-                  style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, AppSpacing.sm,
+              ),
+              child: Text(
+                'Add photo',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
             ),
             ListTile(
-              leading: const Icon(Icons.photo_camera, color: Colors.white),
-              title: const Text('Take photo',
-                  style: TextStyle(color: Colors.white)),
+              leading: const Icon(Icons.photo_camera),
+              title: const Text('Take photo'),
               onTap: () => Navigator.pop(context, ImageSource.camera),
             ),
             ListTile(
-              leading:
-              const Icon(Icons.photo_library, color: Colors.white),
-              title: const Text('Choose from gallery',
-                  style: TextStyle(color: Colors.white)),
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Choose from gallery'),
               onTap: () => Navigator.pop(context, ImageSource.gallery),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
           ],
         ),
       ),
@@ -314,9 +300,6 @@ class _DateScreenState extends State<DateScreen> {
     }
   }
 
-  /// Guard against re-scheduling the same session on every rebuild.
-  /// When a session that was previously active ends (session becomes null),
-  /// pop this screen instead of falling back to the setup form.
   void _onSessionUpdate(Session? session) {
     if (session == null) {
       if (_lastHandledSessionId != null) {
@@ -376,78 +359,62 @@ class _DateScreenState extends State<DateScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Theme(
-      data: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF0E1116),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: Colors.grey.shade900,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide.none,
-          ),
-          contentPadding:
-          const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          labelStyle: TextStyle(color: Colors.grey.shade400),
-        ),
-      ),
-      child: Scaffold(
-        appBar: AppBar(
-          backgroundColor: const Color(0xFF0E1116),
-          elevation: 0,
-          title: const Text('Meeting a stranger'),
-        ),
-        body: StreamBuilder<Session?>(
-          stream: _sessions.watchActiveSession(),
-          builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Meeting a stranger')),
+      body: StreamBuilder<Session?>(
+        stream: _sessions.watchActiveSession(),
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final session = snap.data;
+          WidgetsBinding.instance
+              .addPostFrameCallback((_) => _onSessionUpdate(session));
+
+          if (session == null) {
+            if (_hadActiveSession) {
               return const Center(child: CircularProgressIndicator());
             }
-            final session = snap.data;
-            WidgetsBinding.instance
-                .addPostFrameCallback((_) => _onSessionUpdate(session));
+            return _SetupForm(
+              busy: _busy,
+              nameCtrl: _nameCtrl,
+              venueNameCtrl: _venueNameCtrl,
+              venueAddressCtrl: _venueAddressCtrl,
+              howMetOtherCtrl: _howMetOtherCtrl,
+              plateCtrl: _plateCtrl,
+              howMet: _howMet,
+              howMetOptions: _howMetOptions,
+              onHowMet: (v) => setState(() => _howMet = v),
+              expectedEnd: _expectedEnd,
+              onPickEndTime: _pickEndTime,
+              personPhoto: _personPhoto,
+              carPhoto: _carPhoto,
+              onPickPerson: () => _pickPhoto(true),
+              onPickCar: () => _pickPhoto(false),
+              onStart: _startSession,
+            );
+          }
 
-            if (session == null) {
-              // A session was active and just ended — we're mid-pop, don't
-              // flash the setup form.
-              if (_hadActiveSession) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              return _SetupForm(
-                busy: _busy,
-                nameCtrl: _nameCtrl,
-                venueNameCtrl: _venueNameCtrl,
-                venueAddressCtrl: _venueAddressCtrl,
-                howMetOtherCtrl: _howMetOtherCtrl,
-                plateCtrl: _plateCtrl,
-                howMet: _howMet,
-                howMetOptions: _howMetOptions,
-                onHowMet: (v) => setState(() => _howMet = v),
-                expectedEnd: _expectedEnd,
-                onPickEndTime: _pickEndTime,
-                personPhoto: _personPhoto,
-                carPhoto: _carPhoto,
-                onPickPerson: () => _pickPhoto(true),
-                onPickCar: () => _pickPhoto(false),
-                onStart: _startSession,
-              );
-            }
-
-            return Padding(
-              padding: const EdgeInsets.all(20),
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
               child: _ActiveView(
                 session: session,
                 busy: _busy,
                 onCancel: () => _cancelSession(session.id),
                 onPanic: () => _panic(session.id),
               ),
-            );
-          },
-        ),
+            ),
+          );
+        },
       ),
     );
   }
 }
+
+// ============================================================================
+// SETUP FORM
+// ============================================================================
 
 class _SetupForm extends StatelessWidget {
   const _SetupForm({
@@ -488,194 +455,147 @@ class _SetupForm extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return SafeArea(
       child: Column(
         children: [
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.lg,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: Colors.teal.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                          color: Colors.teal.withOpacity(0.4)),
-                    ),
-                    child: const Row(
+                  AppCard(
+                    background: AppColors.primaryContainer,
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    child: Row(
                       children: [
-                        Icon(Icons.info_outline,
-                            color: Colors.tealAccent),
-                        SizedBox(width: 10),
+                        const Icon(Icons.info_outline,
+                            color: AppColors.primary),
+                        const SizedBox(width: AppSpacing.md),
                         Expanded(
                           child: Text(
-                            'Fill this in before you meet them. If '
-                                'anything happens it gets sent to your '
-                                'trusted contacts.',
-                            style: TextStyle(color: Colors.white),
+                            'Fill this in before you meet them. If anything '
+                                'happens it gets sent to your trusted contacts.',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                color: AppColors.onPrimaryContainer),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 20),
-                  _SectionLabel('Who you\'re meeting'),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: AppSpacing.xl),
+                  const SectionHeader("Who you're meeting"),
                   _PhotoCard(
                     label: 'Photo of them',
                     required: true,
                     file: personPhoto,
                     onTap: onPickPerson,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AppSpacing.md),
                   TextField(
                     controller: nameCtrl,
                     decoration:
                     const InputDecoration(labelText: 'Their name *'),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AppSpacing.md),
                   DropdownButtonFormField<String>(
                     value: howMet,
-                    dropdownColor: Colors.grey.shade900,
                     decoration:
                     const InputDecoration(labelText: 'How you met'),
                     items: howMetOptions
-                        .map((o) => DropdownMenuItem(
-                        value: o,
-                        child: Text(o,
-                            style: const TextStyle(
-                                color: Colors.white))))
+                        .map((o) =>
+                        DropdownMenuItem(value: o, child: Text(o)))
                         .toList(),
                     onChanged: (v) => onHowMet(v ?? 'Tinder'),
                   ),
                   if (howMet == 'Other') ...[
-                    const SizedBox(height: 8),
+                    const SizedBox(height: AppSpacing.sm),
                     TextField(
                       controller: howMetOtherCtrl,
                       decoration:
                       const InputDecoration(labelText: 'Specify'),
                     ),
                   ],
-                  const SizedBox(height: 24),
-                  _SectionLabel('Where and when'),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: AppSpacing.xl),
+                  const SectionHeader('Where and when'),
                   TextField(
                     controller: venueNameCtrl,
                     decoration:
                     const InputDecoration(labelText: 'Venue name *'),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AppSpacing.md),
                   TextField(
                     controller: venueAddressCtrl,
                     decoration: const InputDecoration(
                         labelText: 'Venue address *'),
                   ),
-                  const SizedBox(height: 12),
-                  Material(
-                    color: Colors.grey.shade900,
-                    borderRadius: BorderRadius.circular(10),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(10),
-                      onTap: onPickEndTime,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 14),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.schedule,
-                                color: Colors.tealAccent),
-                            const SizedBox(width: 12),
-                            const Expanded(
-                              child: Text('Expected end time',
-                                  style: TextStyle(color: Colors.white)),
-                            ),
-                            Text(
-                              TimeOfDay.fromDateTime(expectedEnd)
-                                  .format(context),
-                              style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontWeight: FontWeight.w600),
-                            ),
-                            const SizedBox(width: 4),
-                            const Icon(Icons.chevron_right,
-                                color: Colors.white54),
-                          ],
+                  const SizedBox(height: AppSpacing.md),
+                  AppCard(
+                    onTap: onPickEndTime,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.lg,
+                      vertical: AppSpacing.md,
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.schedule, color: AppColors.primary),
+                        const SizedBox(width: AppSpacing.md),
+                        const Expanded(child: Text('Expected end time')),
+                        Text(
+                          TimeOfDay.fromDateTime(expectedEnd).format(context),
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(color: AppColors.primary),
                         ),
-                      ),
+                        const SizedBox(width: AppSpacing.xs),
+                        Icon(Icons.chevron_right,
+                            color: scheme.onSurfaceVariant),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 24),
-                  _SectionLabel('If they picked you up (optional)'),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: AppSpacing.xl),
+                  const SectionHeader('If they picked you up (optional)'),
                   _PhotoCard(
                     label: 'Car photo',
                     required: false,
                     file: carPhoto,
                     onTap: onPickCar,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AppSpacing.md),
                   TextField(
                     controller: plateCtrl,
-                    decoration: const InputDecoration(
-                        labelText: 'License plate'),
+                    decoration:
+                    const InputDecoration(labelText: 'License plate'),
                     textCapitalization: TextCapitalization.characters,
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: AppSpacing.lg),
                 ],
               ),
             ),
           ),
           Container(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0E1116),
-              border: Border(
-                top: BorderSide(color: Colors.grey.shade800),
-              ),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.lg,
             ),
-            child: SizedBox(
-              height: 54,
-              child: FilledButton.icon(
-                style: FilledButton.styleFrom(
-                    backgroundColor: Colors.teal.shade700),
-                onPressed: busy ? null : onStart,
-                icon: busy
-                    ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.shield),
-                label: Text(busy ? 'Starting…' : 'Start date session',
-                    style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w600)),
-              ),
+            decoration: BoxDecoration(
+              color: scheme.surface,
+              border: Border(top: BorderSide(color: scheme.outlineVariant)),
+            ),
+            child: PrimaryButton(
+              label: busy ? 'Starting…' : 'Start date session',
+              icon: Icons.shield,
+              onPressed: onStart,
+              busy: busy,
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel(this.text);
-  final String text;
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 4),
-      child: Text(
-        text.toUpperCase(),
-        style: TextStyle(
-          fontSize: 11,
-          letterSpacing: 1.2,
-          fontWeight: FontWeight.w600,
-          color: Colors.tealAccent.shade100,
-        ),
       ),
     );
   }
@@ -695,65 +615,58 @@ class _PhotoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final missing = file == null && required;
+    return AppCard(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        height: 96,
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: Colors.grey.shade900,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: file == null && required
-                ? Colors.redAccent.withOpacity(0.4)
-                : Colors.grey.shade800,
+      borderColor:
+      missing ? AppColors.danger.withOpacity(0.4) : scheme.outlineVariant,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(AppShapes.radiusSm),
+            child: file == null
+                ? Container(
+              width: 76,
+              height: 76,
+              color: scheme.surfaceContainerHighest,
+              child: Icon(Icons.add_a_photo,
+                  color: scheme.onSurfaceVariant, size: 30),
+            )
+                : Image.file(file!,
+                width: 76, height: 76, fit: BoxFit.cover),
           ),
-        ),
-        child: Row(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: file == null
-                  ? Container(
-                width: 76,
-                height: 76,
-                color: Colors.grey.shade800,
-                child: const Icon(Icons.add_a_photo,
-                    color: Colors.white54, size: 30),
-              )
-                  : Image.file(file!,
-                  width: 76, height: 76, fit: BoxFit.cover),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  required ? '$label *' : label,
+                  style: text.titleSmall,
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  file == null ? 'Tap to add' : 'Tap to replace',
+                  style: text.bodySmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+              ],
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    required ? '$label *' : label,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    file == null ? 'Tap to add' : 'Tap to replace',
-                    style: TextStyle(
-                        color: Colors.grey.shade500, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right, color: Colors.white54),
-          ],
-        ),
+          ),
+          Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
+        ],
       ),
     );
   }
 }
+
+// ============================================================================
+// ACTIVE VIEW
+// ============================================================================
 
 class _ActiveView extends StatelessWidget {
   const _ActiveView({
@@ -770,112 +683,74 @@ class _ActiveView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.grey.shade900,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-                color: Colors.tealAccent.withOpacity(0.3), width: 1),
-          ),
+        AppCard(
+          borderColor: AppColors.primary.withOpacity(0.3),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 10,
-                    height: 10,
-                    decoration: const BoxDecoration(
-                      color: Colors.tealAccent,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  const Text('Date session active',
-                      style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white)),
-                ],
+              StatusPill(status: session.status),
+              const SizedBox(height: AppSpacing.md),
+              InfoRow(
+                icon: Icons.play_arrow,
+                label: 'Started',
+                value: _fmt(session.startedAt),
               ),
-              const SizedBox(height: 12),
-              _InfoRow(
-                  icon: Icons.play_arrow,
-                  label: 'Started',
-                  value: _fmt(session.startedAt)),
-              _InfoRow(
-                  icon: Icons.timer,
-                  label: 'Check in every',
-                  value: '${session.durationMinutes} min'),
+              InfoRow(
+                icon: Icons.timer_outlined,
+                label: 'Check in every',
+                value: '${session.durationMinutes} min',
+              ),
               if (session.checkInDueAt != null)
-                _InfoRow(
-                    icon: Icons.schedule,
-                    label: 'Next check-in',
-                    value: _fmt(session.checkInDueAt!)),
-              const SizedBox(height: 12),
-              const Text(
-                '🤳 Shake phone hard to send emergency alert',
-                style: TextStyle(fontSize: 12, color: Colors.white54),
+                InfoRow(
+                  icon: Icons.schedule,
+                  label: 'Next check-in',
+                  value: _fmt(session.checkInDueAt!),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        AppCard(
+          background: AppColors.warningContainer.withOpacity(0.5),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.lg,
+            vertical: AppSpacing.md,
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.vibration,
+                  size: 20, color: AppColors.onWarningContainer),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Text(
+                  'Shake phone hard to send emergency alert',
+                  style: text.bodySmall?.copyWith(
+                    color: AppColors.onWarningContainer,
+                  ),
+                ),
               ),
             ],
           ),
         ),
         const Spacer(),
-        SizedBox(
-          height: 64,
-          child: FilledButton.icon(
-            style: FilledButton.styleFrom(
-                backgroundColor: Colors.red.shade700),
-            onPressed: busy ? null : onPanic,
-            icon: const Icon(Icons.warning_amber_rounded, size: 26),
-            label: const Text('Send alert now',
-                style: TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.w600)),
-          ),
+        DangerButton(
+          label: 'Send alert now',
+          icon: Icons.warning_amber_rounded,
+          onPressed: onPanic,
+          busy: busy,
         ),
-        const SizedBox(height: 12),
-        OutlinedButton.icon(
-          onPressed: busy ? null : onCancel,
-          icon: const Icon(Icons.check),
-          label: const Text("I'm safe — end session"),
+        const SizedBox(height: AppSpacing.sm),
+        SecondaryButton(
+          label: "I'm safe — end session",
+          icon: Icons.check,
+          onPressed: onCancel,
+          busy: busy,
         ),
-        const SizedBox(height: 8),
       ],
-    );
-  }
-}
-
-class _InfoRow extends StatelessWidget {
-  const _InfoRow(
-      {required this.icon, required this.label, required this.value});
-  final IconData icon;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        children: [
-          Icon(icon, size: 16, color: Colors.white54),
-          const SizedBox(width: 8),
-          Text('$label: ',
-              style: const TextStyle(color: Colors.white70, fontSize: 13)),
-          Expanded(
-            child: Text(value,
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500),
-                overflow: TextOverflow.ellipsis),
-          ),
-        ],
-      ),
     );
   }
 }

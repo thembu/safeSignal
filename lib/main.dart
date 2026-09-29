@@ -1,7 +1,4 @@
 // lib/main.dart
-//
-// The only change vs your existing main.dart is adding `FcmService.instance.init()`
-// after Firebase.initializeApp. Everything else you already had.
 
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -10,9 +7,10 @@ import 'package:safe_signal/services/foreground_session_service.dart';
 import 'firebase_options.dart';
 import 'services/auth_service.dart';
 import 'services/contacts_service.dart';
-import 'services/fcm_service.dart'; // NEW
+import 'services/fcm_service.dart';
 import 'services/share_intake_service.dart';
 import 'ui/auth_gate.dart';
+import 'ui/theme/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,14 +18,11 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Order matters: AuthService and ShareIntakeService can run in parallel
-  // with FcmService init, but keep them awaited so the app doesn't render
-  // before Firebase is fully ready.
   await Future.wait([
     AuthService.initialize(),
     ShareIntakeService.instance.init(),
-    ForegroundSessionService.instance.init(),  // NEW
-    FcmService.instance.init(), // NEW — registers background handler + channels
+    ForegroundSessionService.instance.init(),
+    FcmService.instance.init(),
   ]);
 
   runApp(MyApp(
@@ -50,10 +45,12 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'SafeSignal',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true,
-      ),
+      debugShowCheckedModeBanner: false,
+      theme: buildCalmTheme(),
+      // themeMode: ThemeMode.light forces light regardless of system setting.
+      // Escalation screens (check-in, in-grace, SOS) opt into red styling
+      // directly via AppColors.danger — they don't need a dark theme.
+      themeMode: ThemeMode.light,
       home: AuthGate(
         authService: authService,
         contactsService: contactsService,
