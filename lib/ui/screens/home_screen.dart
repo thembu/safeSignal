@@ -113,7 +113,7 @@ class _HomeScreenState extends State<HomeScreen> {
         subtitle: 'Threat at home or in-progress incident',
         icon: Icons.home_outlined,
         color: Colors.red,
-        onTap: () => _openScenario(const DomesticScreen()),
+        onTap: () => _openScenario(DomesticScreen(user: widget.user,)),
       ),
     ];
 
