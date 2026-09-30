@@ -17,20 +17,18 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  await AuthService.initialize(); // needed before AuthGate reads it
 
-  await Future.wait([
-    AuthService.initialize(),
-    ShareIntakeService.instance.init(),
-    ForegroundSessionService.instance.init(),
-    FcmService.instance.init(),
-  ]);
+  // Fire and forget — these don't block first frame
+  ShareIntakeService.instance.init();
+  ForegroundSessionService.instance.init();
+  FcmService.instance.init();
 
   runApp(MyApp(
     authService: AuthService(),
     contactsService: ContactsService(),
   ));
 }
-
 class MyApp extends StatelessWidget {
   final AuthService authService;
   final ContactsService contactsService;
